@@ -3,24 +3,46 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>THE POS v10.4</title>
+    <title>THE POS v10.5</title>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <style>
         body { margin: 0; padding: 0; font-family: sans-serif; background: #000; color: #fff; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+        
+        /* カメラ背景 */
         #reader { width: 100%; height: 100%; position: absolute; top: 0; left: 0; z-index: 1; }
-        .main-panel { position: absolute; bottom: 0; left: 0; width: 100%; background: #ffffff; color: #222; border-top-left-radius: 25px; border-top-right-radius: 25px; transition: transform 0.4s cubic-bezier(0.25, 1, 0.5, 1); z-index: 10; display: flex; flex-direction: column; align-items: center; padding-bottom: env(safe-area-inset-bottom); box-shadow: 0 -5px 20px rgba(0,0,0,0.4); }
+        #reader video { object-fit: cover; }
+
+        /* スライドパネル */
+        .main-panel { 
+            position: absolute; bottom: 0; left: 0; width: 100%;
+            background: #ffffff; color: #222; 
+            border-top-left-radius: 25px; border-top-right-radius: 25px; 
+            transition: transform 0.4s cubic-bezier(0.25, 1, 0.5, 1);
+            z-index: 10; display: flex; flex-direction: column; align-items: center;
+            padding-bottom: env(safe-area-inset-bottom);
+            box-shadow: 0 -5px 20px rgba(0,0,0,0.4);
+        }
+
         .main-panel.closed { transform: translateY(calc(100% - 50px)); }
-        .drag-handle { width: 100%; height: 50px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; }
+
+        .drag-handle {
+            width: 100%; height: 50px; display: flex; flex-direction: column;
+            align-items: center; justify-content: center; cursor: pointer;
+        }
         .handle-bar { width: 40px; height: 5px; background: #ccc; border-radius: 10px; margin-bottom: 5px; }
         .status-badge { font-size: 10px; font-weight: bold; color: #888; text-transform: uppercase; }
+
         .content-area { width: 100%; padding: 0 20px 30px 20px; box-sizing: border-box; text-align: center; }
-        #item-name { font-size: 18px; font-weight: bold; color: #333; margin-top: 10px; }
+        #item-name { font-size: 18px; font-weight: bold; color: #333; margin-top: 10px; min-height: 1.2em; }
         #item-price { font-size: 50px; font-weight: 900; color: #f50057; margin: 5px 0; }
         #item-stock { font-size: 14px; color: #666; background: #f0f0f0; padding: 3px 12px; border-radius: 6px; }
+
+        /* 決済完了画面 */
         #pay-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 100; flex-direction: column; align-items: center; justify-content: center; }
         .qr-card { background: #fff; padding: 20px; border-radius: 20px; text-align: center; color: #333; }
-        .ok-btn { background: #00e676; border: none; padding: 15px 40px; border-radius: 50px; font-weight: bold; margin-top: 20px; color: #000; }
+        #qrcode { margin: 15px auto; }
+        .ok-btn { background: #00e676; border: none; padding: 15px 40px; border-radius: 50px; font-weight: bold; margin-top: 20px; color: #000; cursor: pointer; }
     </style>
 </head>
 <body>
@@ -32,6 +54,7 @@
             <div class="handle-bar"></div>
             <div class="status-badge" id="badge">Syncing...</div>
         </div>
+        
         <div class="content-area">
             <div id="item-name">スキャン待ち</div>
             <div id="item-price">¥ 0</div>
@@ -41,9 +64,11 @@
 
     <div id="pay-overlay">
         <div class="qr-card">
-            <b>決済完了！</b>
+            <div style="font-weight:bold; font-size:18px;">決済完了！</div>
+            <div style="font-size:12px; color:#666;">新しい残高QR</div>
             <div id="qrcode"></div>
-            <button class="ok-btn" onclick="nextScan()">OK</button>
+            <div id="new-code-str" style="font-size:9px; color:#aaa; font-family:monospace;"></div>
+            <button class="ok-btn" onclick="nextScan()">OK (次へ)</button>
         </div>
     </div>
 
@@ -52,33 +77,43 @@
         let currentItem = null;
         let isProcessing = false;
 
-        // スプレッドシートからデータを取得
+        // スプレッドシートデータの取得とパース
         async function syncData() {
             try {
                 const res = await fetch(SHEET_URL);
                 const csvText = await res.text();
-                const rows = csvText.split('\n').slice(1); // ヘッダーを飛ばす
-                const inventory = {};
+                // 行ごとに分割し、空行を除去
+                const rows = csvText.split(/\r?\n/).filter(row => row.trim() !== "");
+                // 1行目はヘッダー（Aの行）なので読み飛ばす
+                const dataRows = rows.slice(1); 
                 
-                rows.forEach(row => {
+                const inventory = {};
+                dataRows.forEach(row => {
                     const cols = row.split(',');
-                    if (cols.length >= 4) {
-                        inventory[cols[0].trim()] = {
-                            name: cols[1].trim(),
-                            price: parseInt(cols[2]),
-                            stock: parseInt(cols[3])
-                        };
+                    if (cols.length >= 3) {
+                        const jan = cols[0].trim();
+                        const name = cols[1].trim();
+                        // 価格から数字以外（「円」や「,」）を除去して数値化
+                        const price = parseInt(cols[2].replace(/[^0-9]/g, '')) || 0;
+                        const stock = parseInt(cols[3]) || 0;
+                        
+                        if (jan) {
+                            inventory[jan] = { name, price, stock };
+                        }
                     }
                 });
                 localStorage.setItem('shop_inventory', JSON.stringify(inventory));
                 document.getElementById('badge').innerText = "Sync OK";
+                console.log("Sync Complete:", inventory);
             } catch (e) {
+                console.error("Sync Error:", e);
                 document.getElementById('badge').innerText = "Offline Mode";
             }
         }
 
         function togglePanel() { document.getElementById('ui-panel').classList.toggle('closed'); }
 
+        // プリペイドQRの検証ルール
         function verify(text) {
             const p = text.split('-');
             if (p.length !== 4) return null;
@@ -88,6 +123,7 @@
             return (p[2] === expectedAlpha && parseInt(p[3]) === expectedCheck) ? { id: p[0], balance: parseInt(p[1]) } : null;
         }
 
+        // 決済成功時の新しいQR表示
         function showPaySuccess(id, newBal) {
             const alphabet = "ABCDEFGHIJ";
             const alpha = id.split('').map(n => alphabet[parseInt(n)]).join('');
@@ -95,6 +131,7 @@
             const code = `${id}-${newBal}-${alpha}-${check}`;
             document.getElementById('qrcode').innerHTML = "";
             new QRCode(document.getElementById("qrcode"), { text: code, width: 180, height: 180 });
+            document.getElementById('new-code-str').innerText = code;
             document.getElementById('pay-overlay').style.display = 'flex';
         }
 
@@ -109,30 +146,32 @@
         }
 
         window.onload = async () => {
-            await syncData(); // 起動時に同期
+            await syncData();
             const scanner = new Html5Qrcode("reader");
             scanner.start({ facingMode: "environment" }, { fps: 20, qrbox: 200 }, (text) => {
                 if (isProcessing) return;
+
                 const user = verify(text);
                 if (user) {
                     if (!currentItem) {
-                        alert("先に商品をスキャンしてね");
+                        alert(`残高: ¥${user.balance}\n先に商品をスキャンしてください`);
                     } else if (user.balance >= currentItem.price) {
                         isProcessing = true;
-                        // 端末内の在庫を減らす（スプレッドシート側は手動更新）
                         const inv = JSON.parse(localStorage.getItem('shop_inventory')) || {};
                         if (inv[currentItem.jan]) {
                             inv[currentItem.jan].stock -= 1;
                             localStorage.setItem('shop_inventory', JSON.stringify(inv));
                         }
                         showPaySuccess(user.id, user.balance - currentItem.price);
+                    } else {
+                        alert("残高が足りません！");
                     }
                 } else {
                     const inv = JSON.parse(localStorage.getItem('shop_inventory')) || {};
                     if (inv[text]) {
                         currentItem = { ...inv[text], jan: text };
                         document.getElementById('item-name').innerText = currentItem.name;
-                        document.getElementById('item-price').innerText = `¥ ${currentItem.price}`;
+                        document.getElementById('item-price').innerText = `¥ ${currentItem.price.toLocaleString()}`;
                         document.getElementById('item-stock').innerText = `在庫: ${currentItem.stock}`;
                         document.getElementById('badge').innerText = "Ready to Pay";
                         document.getElementById('ui-panel').classList.remove('closed');
