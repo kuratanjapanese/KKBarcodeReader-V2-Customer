@@ -3,136 +3,122 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>在庫連動レジ v9.0</title>
+    <title>THE POS v10.0</title>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <style>
-        html, body { margin: 0; padding: 0; width: 100%; height: 100dvh; overflow: hidden; font-family: sans-serif; background: #000; color: #fff; display: flex; flex-direction: column; }
-        .header { height: 40px; background: #222; display: flex; align-items: center; justify-content: center; border-bottom: 2px solid #00ffcc; }
-        #reader { flex-grow: 1; width: 100%; }
-        .info-panel { background: white; color: #333; padding: 15px; border-top-left-radius: 20px; border-top-right-radius: 20px; text-align: center; }
-        .price-tag { font-size: 32px; color: #ff0033; font-weight: bold; }
-        .stock-info { font-size: 12px; color: #666; }
-        #new-qr-container { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 20px; border-radius: 15px; text-align: center; z-index: 100; color: #000; box-shadow: 0 0 20px rgba(0,255,204,0.5); }
-        .close-btn { background: #00ffcc; color: #000; border: none; padding: 10px 20px; border-radius: 5px; font-weight: bold; margin-top: 10px; }
+        body { margin: 0; padding: 0; font-family: 'Hiragino Sans', sans-serif; background: #111; color: #fff; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+        
+        /* カメラを小さく上部に配置 */
+        #reader { width: 100%; height: 35%; background: #000; }
+        
+        .main-panel { flex: 1; background: #eee; color: #222; border-top-left-radius: 30px; border-top-right-radius: 30px; padding: 20px; display: flex; flex-direction: column; align-items: center; justify-content: space-between; box-shadow: 0 -5px 15px rgba(0,0,0,0.5); }
+        
+        .status-badge { font-size: 10px; padding: 4px 12px; border-radius: 20px; background: #333; color: #00ffcc; margin-bottom: 10px; }
+        
+        .item-info { width: 100%; text-align: center; }
+        #item-name { font-size: 18px; font-weight: bold; margin-bottom: 5px; color: #444; }
+        #item-price { font-size: 40px; font-weight: 900; color: #e91e63; }
+        #item-stock { font-size: 14px; color: #777; }
+
+        /* 決済成功時のQRポップアップ */
+        #pay-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 100; flex-direction: column; align-items: center; justify-content: center; padding: 20px; }
+        .qr-card { background: #fff; padding: 20px; border-radius: 20px; text-align: center; }
+        #qrcode { margin: 15px auto; }
+        .ok-btn { background: #00ffcc; border: none; padding: 15px 40px; border-radius: 50px; font-weight: bold; font-size: 18px; margin-top: 20px; cursor: pointer; }
     </style>
 </head>
 <body>
-    <div class="header"><div style="color:#00ffcc; font-weight:bold;">POS SYSTEM v9.0</div></div>
+
     <div id="reader"></div>
 
-    <div class="info-panel">
-        <div id="item-name" style="font-weight:bold;">スキャン待ち...</div>
-        <div id="display-price" class="price-tag">¥ ---</div>
-        <div id="display-stock" class="stock-info">在庫: --</div>
+    <div class="main-panel">
+        <div class="status-badge">● SCANNING MODE</div>
+        
+        <div class="item-info">
+            <div id="item-name">スキャンしてください</div>
+            <div id="item-price">¥ 0</div>
+            <div id="item-stock">在庫: --</div>
+        </div>
+
+        <div style="font-size: 11px; color: #999;">
+            商品バーコード ➜ プリペイドQR の順でスキャン
+        </div>
     </div>
 
-    <div id="new-qr-container">
-        <p style="font-weight:bold;">決済完了！新しい残高コード</p>
-        <div id="qrcode"></div>
-        <p id="new-code-text" style="font-size: 10px;"></p>
-        <button class="close-btn" onclick="closeQR()">OK (次へ)</button>
+    <div id="pay-overlay">
+        <div class="qr-card">
+            <div style="color:#333; font-weight:bold;">決済完了！新残高</div>
+            <div id="qrcode"></div>
+            <div id="new-code-str" style="font-size:9px; color:#aaa;"></div>
+        </div>
+        <button class="ok-btn" onclick="nextScan()">次のお客さんへ</button>
     </div>
 
     <script>
-        let isScanning = true;
-        let currentItem = null; // 現在スキャンされている商品の情報
+        let currentItem = null;
+        let isProcessing = false;
 
-        // --- 1. 商品検索（管理画面の在庫を優先） ---
-        async function findProduct(jan) {
-            const inventory = JSON.parse(localStorage.getItem('shop_inventory')) || {};
-            
-            if (inventory[jan]) {
-                // 自作管理画面にデータがある場合
-                return { ...inventory[jan], jan: jan, source: 'local' };
-            } else {
-                // ない場合はYahoo APIで探す（デモ用）
-                const CLIENT_ID = "dj00aiZpPUZYTWdEYTdlSHF1aCZzPWNvbnN1bWVyc2VjcmV0Jng9Zjc-";
-                const url = `https://corsproxy.io/?${encodeURIComponent("https://shopping.yahooapis.jp/ShoppingWebService/V3/itemSearch?appid="+CLIENT_ID+"&jan_code="+jan)}`;
-                try {
-                    const res = await fetch(url);
-                    const data = await res.json();
-                    if (data.hits && data.hits.length > 0) {
-                        return { name: data.hits[0].name, price: data.hits[0].price, stock: 99, source: 'api' };
-                    }
-                } catch (e) { return null; }
-            }
-            return null;
-        }
-
-        // --- 2. 偽造防止ロジック ---
-        function verifyPrepaid(text) {
-            const parts = text.split('-');
-            if (parts.length !== 4) return null;
-            const [id, balStr, idAlpha, checkStr] = parts;
-            const balance = parseInt(balStr);
-            const checkNum = parseInt(checkStr);
-
+        // 偽造防止ロジック
+        function verify(text) {
+            const p = text.split('-');
+            if (p.length !== 4) return null;
             const alphabet = "ABCDEFGHIJ";
-            const expectedAlpha = id.split('').map(n => alphabet[parseInt(n)]).join('');
-            const expectedCheckNum = Math.round((balance + parseInt(id)) / 2);
-
-            return (idAlpha === expectedAlpha && checkNum === expectedCheckNum) ? { id, balance } : null;
+            const expectedAlpha = p[0].split('').map(n => alphabet[parseInt(n)]).join('');
+            const expectedCheck = Math.round((parseInt(p[1]) + parseInt(p[0])) / 2);
+            return (p[2] === expectedAlpha && parseInt(p[3]) === expectedCheck) ? { id: p[0], balance: parseInt(p[1]) } : null;
         }
 
-        // --- 3. 決済実行（在庫を減らす） ---
-        function executePayment(userData) {
-            if (!currentItem) return alert("先に商品をスキャンしてね");
-            
-            if (userData.balance < currentItem.price) return alert("残高が足りないよ！");
-            if (currentItem.stock <= 0) return alert("売り切れです！");
-
-            // 在庫を減らす（管理画面のデータを更新）
-            if (currentItem.source === 'local') {
-                const inventory = JSON.parse(localStorage.getItem('shop_inventory'));
-                inventory[currentItem.jan].stock -= 1;
-                localStorage.setItem('shop_inventory', JSON.stringify(inventory));
-            }
-
-            // 新しい残高QR生成
-            const newBal = userData.balance - currentItem.price;
-            generateNewQR(userData.id, newBal);
-            
-            alert(`【${currentItem.name}】を購入しました！`);
-            currentItem = null; 
-            updateDisplay("スキャン待ち...", "---", "--");
-        }
-
-        function updateDisplay(name, price, stock) {
-            document.getElementById('item-name').innerText = name;
-            document.getElementById('display-price').innerText = `¥ ${price}`;
-            document.getElementById('display-stock').innerText = `在庫: ${stock}`;
-        }
-
-        function generateNewQR(id, newBalance) {
+        function showPaySuccess(id, newBal) {
             const alphabet = "ABCDEFGHIJ";
-            const idAlpha = id.split('').map(n => alphabet[parseInt(n)]).join('');
-            const checkNum = Math.round((newBalance + parseInt(id)) / 2);
-            const newCode = `${id}-${newBalance}-${idAlpha}-${checkNum}`;
+            const alpha = id.split('').map(n => alphabet[parseInt(n)]).join('');
+            const check = Math.round((newBal + parseInt(id)) / 2);
+            const code = `${id}-${newBal}-${alpha}-${check}`;
+
             document.getElementById('qrcode').innerHTML = "";
-            new QRCode(document.getElementById("qrcode"), { text: newCode, width: 160, height: 160 });
-            document.getElementById('new-qr-container').style.display = 'block';
-            isScanning = false;
+            new QRCode(document.getElementById("qrcode"), { text: code, width: 180, height: 180 });
+            document.getElementById('new-code-str').innerText = code;
+            document.getElementById('pay-overlay').style.display = 'flex';
         }
 
-        function closeQR() {
-            document.getElementById('new-qr-container').style.display = 'none';
-            isScanning = true;
+        function nextScan() {
+            document.getElementById('pay-overlay').style.display = 'none';
+            currentItem = null;
+            document.getElementById('item-name').innerText = "スキャンしてください";
+            document.getElementById('item-price').innerText = "¥ 0";
+            document.getElementById('item-stock').innerText = "在庫: --";
+            isProcessing = false;
         }
 
         window.onload = () => {
             const scanner = new Html5Qrcode("reader");
-            scanner.start({ facingMode: "environment" }, { fps: 20, qrbox: 250 }, async (text) => {
-                if (!isScanning) return;
+            scanner.start({ facingMode: "environment" }, { fps: 20, qrbox: {width: 200, height: 120} }, (text) => {
+                if (isProcessing) return;
 
-                const userData = verifyPrepaid(text);
-                if (userData) {
-                    executePayment(userData);
+                const user = verify(text);
+                if (user) {
+                    // プリペイド読み取り
+                    if (!currentItem) {
+                        alert(`残高: ¥${user.balance}\n先に商品をスキャンしてください`);
+                    } else if (user.balance >= currentItem.price && currentItem.stock > 0) {
+                        isProcessing = true;
+                        // 在庫減算
+                        const inv = JSON.parse(localStorage.getItem('shop_inventory'));
+                        inv[currentItem.jan].stock -= 1;
+                        localStorage.setItem('shop_inventory', JSON.stringify(inv));
+                        // 成功表示
+                        showPaySuccess(user.id, user.balance - currentItem.price);
+                    } else {
+                        alert("決済できません（残高不足または在庫切れ）");
+                    }
                 } else {
-                    const product = await findProduct(text);
-                    if (product) {
-                        currentItem = product;
-                        updateDisplay(product.name, product.price.toLocaleString(), product.stock);
+                    // 商品バーコード（在庫管理から取得）
+                    const inv = JSON.parse(localStorage.getItem('shop_inventory')) || {};
+                    if (inv[text]) {
+                        currentItem = { ...inv[text], jan: text };
+                        document.getElementById('item-name').innerText = currentItem.name;
+                        document.getElementById('item-price').innerText = `¥ ${currentItem.price.toLocaleString()}`;
+                        document.getElementById('item-stock').innerText = `在庫: ${currentItem.stock}`;
                     }
                 }
             });
