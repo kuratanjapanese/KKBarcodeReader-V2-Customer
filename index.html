@@ -3,30 +3,45 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>THE POS v11.8 CART</title>
+    <title>THE POS v11.9 FOLDABLE</title>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <style>
         body { margin: 0; font-family: sans-serif; background: #000; color: #fff; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
-        #reader { width: 100%; height: 40%; position: relative; z-index: 1; background: #222; }
+        #reader { width: 100%; height: 100%; position: absolute; top: 0; left: 0; z-index: 1; }
         
         #logout-btn { position: absolute; top: 10px; right: 10px; z-index: 110; padding: 8px 12px; background: #ff4444; color: white; border: none; border-radius: 8px; font-weight: bold; display: none; }
         #step-indicator { position: absolute; top: 10px; left: 10px; z-index: 100; padding: 10px 15px; border-radius: 50px; font-weight: bold; font-size: 12px; }
         .step-prepaid { background: #007bff; border: 2px solid #fff; }
         .step-item { background: #ffc107; color: #000; }
 
-        .main-panel { flex: 1; background: #fff; color: #222; z-index: 10; padding: 15px; display: flex; flex-direction: column; border-top: 5px solid #007bff; }
-        #user-info { font-size: 14px; color: #007bff; font-weight: bold; margin-bottom: 10px; text-align: center; }
+        /* 折りたたみパネルのスタイル */
+        .main-panel { 
+            position: absolute; bottom: 0; width: 100%; height: 70%;
+            background: #fff; color: #222; z-index: 10; 
+            display: flex; flex-direction: column; 
+            border-radius: 30px 30px 0 0;
+            transition: transform 0.4s cubic-bezier(0.25, 1, 0.5, 1);
+            padding-bottom: env(safe-area-inset-bottom);
+        }
+        /* パネルが閉じている時の状態 */
+        .main-panel.collapsed { transform: translateY(calc(70% - 60px)); }
+
+        .drag-handle { 
+            width: 100%; height: 60px; display: flex; flex-direction: column; 
+            justify-content: center; align-items: center; cursor: pointer;
+        }
+        .handle-bar { width: 40px; height: 5px; background: #ccc; border-radius: 10px; margin-bottom: 5px; }
+        #panel-title { font-size: 14px; font-weight: bold; color: #007bff; }
         
-        /* カゴの表示エリア */
+        .content-area { flex: 1; padding: 0 20px 20px; display: flex; flex-direction: column; overflow: hidden; }
         #cart-container { flex: 1; overflow-y: auto; background: #f9f9f9; border-radius: 15px; padding: 10px; margin-bottom: 10px; border: 1px inset #eee; }
-        .cart-item { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #ddd; font-size: 16px; }
-        .cart-item b { color: #333; }
+        .cart-item { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #ddd; }
         
-        #total-area { display: flex; justify-content: space-between; align-items: center; padding: 10px; background: #eee; border-radius: 10px; }
+        #total-area { display: flex; justify-content: space-between; align-items: center; padding: 15px; background: #eee; border-radius: 15px; }
         #total-price { font-size: 32px; font-weight: 900; color: #f50057; }
         
-        #buy-btn { width: 100%; padding: 15px; background: #f50057; color: white; border: none; border-radius: 50px; font-size: 20px; font-weight: bold; margin-top: 10px; display: none; }
+        #buy-btn { width: 100%; padding: 18px; background: #f50057; color: white; border: none; border-radius: 50px; font-size: 20px; font-weight: bold; margin-top: 10px; display: none; }
         
         #pay-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.95); z-index: 100; flex-direction: column; align-items: center; justify-content: center; }
     </style>
@@ -37,19 +52,21 @@
     <div id="step-indicator" class="step-prepaid">1. 会員証をスキャン</div>
     <div id="reader"></div>
 
-    <div class="main-panel">
-        <div id="user-info">💳 ログインしてください</div>
-        
-        <div id="cart-container">
-            <div id="empty-msg" style="text-align:center; color:#999; margin-top:20px;">カゴは空です</div>
-        </div>
-
-        <div id="total-area">
-            <span style="font-weight:bold;">合計金額:</span>
-            <span id="total-price">¥ 0</span>
+    <div class="main-panel" id="ui-panel">
+        <div class="drag-handle" onclick="togglePanel()">
+            <div class="handle-bar"></div>
+            <div id="panel-title">タップでカゴを表示</div>
         </div>
         
-        <button id="buy-btn" onclick="executePayment()">カゴの中身を決済する</button>
+        <div class="content-area">
+            <div id="user-info" style="text-align:center; font-weight:bold; color:#007bff; margin-bottom:10px;">💳 ログインしてください</div>
+            <div id="cart-container"><div id="empty-msg" style="text-align:center; color:#999; margin-top:20px;">カゴは空です</div></div>
+            <div id="total-area">
+                <span style="font-weight:bold;">合計:</span>
+                <span id="total-price">¥ 0</span>
+            </div>
+            <button id="buy-btn" onclick="executePayment()">カゴの中身を決済する</button>
+        </div>
     </div>
 
     <div id="pay-overlay">
@@ -67,8 +84,14 @@
         
         let currentUser = null;
         let cart = [];
-        let totalPrice = 0;
-        let lastScannedCode = ""; // 同じものを連続で読みすぎないように
+        let lastScannedCode = "";
+
+        // パネルの開閉切り替え
+        function togglePanel() {
+            const panel = document.getElementById('ui-panel');
+            panel.classList.toggle('collapsed');
+            document.getElementById('panel-title').innerText = panel.classList.contains('collapsed') ? "タップでカゴを表示" : "タップで閉じる";
+        }
 
         async function syncInventory() {
             const res = await fetch(SHEET_URL + "&cb=" + Date.now());
@@ -79,36 +102,32 @@
         function addToCart(item) {
             cart.push(item);
             renderCart();
+            // 商品追加時にパネルを少し揺らすか、自動で開くようにしてもいいかも
             if (navigator.vibrate) navigator.vibrate(50);
         }
 
         function renderCart() {
             const container = document.getElementById('cart-container');
             container.innerHTML = "";
-            totalPrice = 0;
-            
-            cart.forEach((item, index) => {
-                totalPrice += item.price;
+            let total = 0;
+            cart.forEach((item, i) => {
+                total += item.price;
                 const div = document.createElement('div');
                 div.className = 'cart-item';
-                div.innerHTML = `<span>${index+1}. <b>${item.name}</b></span> <span>¥${item.price}</span>`;
+                div.innerHTML = `<span>${i+1}. ${item.name}</span> <b>¥${item.price}</b>`;
                 container.appendChild(div);
             });
-            
-            document.getElementById('total-price').innerText = `¥ ${totalPrice.toLocaleString()}`;
+            document.getElementById('total-price').innerText = `¥ ${total.toLocaleString()}`;
             document.getElementById('buy-btn').style.display = cart.length > 0 ? 'block' : 'none';
         }
 
         async function executePayment() {
-            if (totalPrice > currentUser.balance) {
-                alert("残高が足りません！");
-                return;
-            }
-            
+            const total = cart.reduce((sum, item) => sum + item.price, 0);
+            if (total > currentUser.balance) return alert("残高不足です");
             document.getElementById('buy-btn').innerText = "通信中...";
-            await fetch(`${GAS_URL}?id=${currentUser.id}&amount=${-totalPrice}`, { mode: 'no-cors' });
+            await fetch(`${GAS_URL}?id=${currentUser.id}&amount=${-total}`, { mode: 'no-cors' });
             
-            const finalBal = currentUser.balance - totalPrice;
+            const finalBal = currentUser.balance - total;
             document.getElementById('new-balance-text').innerText = `新残高: ¥${finalBal}`;
             document.getElementById('qrcode').innerHTML = "";
             new QRCode(document.getElementById("qrcode"), { text: `${currentUser.id}-${finalBal}`, width: 180, height: 180 });
@@ -122,17 +141,17 @@
             const savedUser = sessionStorage.getItem('loggedInUser');
             if (savedUser) {
                 currentUser = JSON.parse(savedUser);
-                document.getElementById('user-info').innerText = `会員:${currentUser.id} | 残高:¥${currentUser.balance}`;
+                document.getElementById('user-info').innerText = `ID:${currentUser.id} | 残高:¥${currentUser.balance}`;
                 document.getElementById('logout-btn').style.display = 'block';
-                document.getElementById('step-indicator').innerText = "2. 商品をカゴに追加";
+                document.getElementById('step-indicator').innerText = "2. 商品をスキャン";
                 document.getElementById('step-indicator').className = "step-item";
             }
 
             const scanner = new Html5Qrcode("reader");
             scanner.start({ facingMode: "environment" }, { fps: 20, qrbox: {width:250, height:150} }, async (text) => {
-                if (text === lastScannedCode) return; // 連続検知防止
+                if (text === lastScannedCode) return;
                 lastScannedCode = text;
-                setTimeout(() => { lastScannedCode = ""; }, 2000); // 2秒経てばまた同じものを読める
+                setTimeout(() => { lastScannedCode = ""; }, 2000);
 
                 const parts = text.split('-');
                 if (!currentUser && parts.length >= 2) {
@@ -147,9 +166,7 @@
                 if (currentUser) {
                     const code = text.replace(/\D/g,"");
                     const inv = JSON.parse(localStorage.getItem('inv'));
-                    if (inv[code]) {
-                        addToCart(inv[code]);
-                    }
+                    if (inv[code]) addToCart(inv[code]);
                 }
             });
         };
