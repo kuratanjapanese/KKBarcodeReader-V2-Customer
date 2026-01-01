@@ -3,50 +3,24 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>THE POS v10.3</title>
+    <title>THE POS v10.4</title>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <style>
-        body { 
-            margin: 0; padding: 0; font-family: sans-serif; 
-            background: #000; color: #fff; height: 100dvh; 
-            display: flex; flex-direction: column; overflow: hidden; 
-        }
-        
-        /* カメラ背景 */
+        body { margin: 0; padding: 0; font-family: sans-serif; background: #000; color: #fff; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
         #reader { width: 100%; height: 100%; position: absolute; top: 0; left: 0; z-index: 1; }
-
-        /* スライドパネル */
-        .main-panel { 
-            position: absolute; bottom: 0; left: 0; width: 100%;
-            background: #ffffff; color: #222; 
-            border-top-left-radius: 25px; border-top-right-radius: 25px; 
-            transition: transform 0.4s cubic-bezier(0.25, 1, 0.5, 1);
-            z-index: 10; display: flex; flex-direction: column; align-items: center;
-            padding-bottom: env(safe-area-inset-bottom);
-            box-shadow: 0 -5px 20px rgba(0,0,0,0.4);
-        }
-
-        /* パネルが閉じている時の状態 */
+        .main-panel { position: absolute; bottom: 0; left: 0; width: 100%; background: #ffffff; color: #222; border-top-left-radius: 25px; border-top-right-radius: 25px; transition: transform 0.4s cubic-bezier(0.25, 1, 0.5, 1); z-index: 10; display: flex; flex-direction: column; align-items: center; padding-bottom: env(safe-area-inset-bottom); box-shadow: 0 -5px 20px rgba(0,0,0,0.4); }
         .main-panel.closed { transform: translateY(calc(100% - 50px)); }
-
-        /* 引き出しハンドル */
-        .drag-handle {
-            width: 100%; height: 50px; display: flex; flex-direction: column;
-            align-items: center; justify-content: center; cursor: pointer;
-        }
+        .drag-handle { width: 100%; height: 50px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; }
         .handle-bar { width: 40px; height: 5px; background: #ccc; border-radius: 10px; margin-bottom: 5px; }
         .status-badge { font-size: 10px; font-weight: bold; color: #888; text-transform: uppercase; }
-
         .content-area { width: 100%; padding: 0 20px 30px 20px; box-sizing: border-box; text-align: center; }
         #item-name { font-size: 18px; font-weight: bold; color: #333; margin-top: 10px; }
         #item-price { font-size: 50px; font-weight: 900; color: #f50057; margin: 5px 0; }
         #item-stock { font-size: 14px; color: #666; background: #f0f0f0; padding: 3px 12px; border-radius: 6px; }
-
-        /* 決済完了画面 */
         #pay-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 100; flex-direction: column; align-items: center; justify-content: center; }
         .qr-card { background: #fff; padding: 20px; border-radius: 20px; text-align: center; color: #333; }
-        .ok-btn { background: #00e676; border: none; padding: 15px 40px; border-radius: 50px; font-weight: bold; margin-top: 20px; }
+        .ok-btn { background: #00e676; border: none; padding: 15px 40px; border-radius: 50px; font-weight: bold; margin-top: 20px; color: #000; }
     </style>
 </head>
 <body>
@@ -56,9 +30,8 @@
     <div class="main-panel" id="ui-panel">
         <div class="drag-handle" onclick="togglePanel()">
             <div class="handle-bar"></div>
-            <div class="status-badge" id="badge">Scanning...</div>
+            <div class="status-badge" id="badge">Syncing...</div>
         </div>
-        
         <div class="content-area">
             <div id="item-name">スキャン待ち</div>
             <div id="item-price">¥ 0</div>
@@ -75,12 +48,36 @@
     </div>
 
     <script>
+        const SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQk46CrTJJU-4KMeCxx1DUZCv367fzhXAtdjzWEW0eDT1VdgvGCk4C-NQATkqbjhsZzDoeWQDVdjxHV/pub?gid=0&single=true&output=csv";
         let currentItem = null;
         let isProcessing = false;
 
-        function togglePanel() {
-            document.getElementById('ui-panel').classList.toggle('closed');
+        // スプレッドシートからデータを取得
+        async function syncData() {
+            try {
+                const res = await fetch(SHEET_URL);
+                const csvText = await res.text();
+                const rows = csvText.split('\n').slice(1); // ヘッダーを飛ばす
+                const inventory = {};
+                
+                rows.forEach(row => {
+                    const cols = row.split(',');
+                    if (cols.length >= 4) {
+                        inventory[cols[0].trim()] = {
+                            name: cols[1].trim(),
+                            price: parseInt(cols[2]),
+                            stock: parseInt(cols[3])
+                        };
+                    }
+                });
+                localStorage.setItem('shop_inventory', JSON.stringify(inventory));
+                document.getElementById('badge').innerText = "Sync OK";
+            } catch (e) {
+                document.getElementById('badge').innerText = "Offline Mode";
+            }
         }
+
+        function togglePanel() { document.getElementById('ui-panel').classList.toggle('closed'); }
 
         function verify(text) {
             const p = text.split('-');
@@ -111,7 +108,8 @@
             isProcessing = false;
         }
 
-        window.onload = () => {
+        window.onload = async () => {
+            await syncData(); // 起動時に同期
             const scanner = new Html5Qrcode("reader");
             scanner.start({ facingMode: "environment" }, { fps: 20, qrbox: 200 }, (text) => {
                 if (isProcessing) return;
@@ -121,6 +119,7 @@
                         alert("先に商品をスキャンしてね");
                     } else if (user.balance >= currentItem.price) {
                         isProcessing = true;
+                        // 端末内の在庫を減らす（スプレッドシート側は手動更新）
                         const inv = JSON.parse(localStorage.getItem('shop_inventory')) || {};
                         if (inv[currentItem.jan]) {
                             inv[currentItem.jan].stock -= 1;
@@ -136,7 +135,6 @@
                         document.getElementById('item-price').innerText = `¥ ${currentItem.price}`;
                         document.getElementById('item-stock').innerText = `在庫: ${currentItem.stock}`;
                         document.getElementById('badge').innerText = "Ready to Pay";
-                        // 商品を読み取ったら自動でパネルを開く
                         document.getElementById('ui-panel').classList.remove('closed');
                     }
                 }
