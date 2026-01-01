@@ -3,148 +3,105 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>THE POS v11.5</title>
+    <title>THE SERVER POS v11.6</title>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <style>
-        body { margin: 0; padding: 0; font-family: sans-serif; background: #000; color: #fff; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+        body { margin: 0; font-family: sans-serif; background: #000; color: #fff; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
         #reader { width: 100%; height: 100%; position: absolute; top: 0; left: 0; z-index: 1; }
-        
-        #step-indicator { 
-            position: absolute; top: 15px; left: 50%; transform: translateX(-50%); 
-            z-index: 100; padding: 12px 30px; border-radius: 50px; 
-            font-weight: bold; font-size: 16px; text-align: center; width: 80%;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
-        }
-        .step-prepaid { background: #007bff; color: white; border: 2px solid #fff; }
-        .step-item { background: #ffc107; color: #000; border: 2px solid #000; }
-
-        .main-panel { 
-            position: absolute; bottom: 0; left: 0; width: 100%; 
-            background: #ffffff; color: #222; 
-            border-top-left-radius: 30px; border-top-right-radius: 30px; 
-            z-index: 10; display: flex; flex-direction: column; align-items: center; 
-            padding-bottom: env(safe-area-inset-bottom);
-        }
-        .content-area { width: 100%; padding: 20px; box-sizing: border-box; text-align: center; }
-        #user-info { font-size: 14px; color: #007bff; font-weight: bold; margin-bottom: 8px; }
-        #item-name { font-size: 22px; font-weight: bold; color: #333; }
-        #item-price { font-size: 60px; font-weight: 900; color: #f50057; margin: 10px 0; }
-        
-        #buy-btn { 
-            width: 90%; padding: 18px; background: #f50057; color: white; 
-            border: none; border-radius: 50px; font-size: 24px; font-weight: bold; 
-            display: none; cursor: pointer;
-        }
-
+        #step-indicator { position: absolute; top: 15px; left: 50%; transform: translateX(-50%); z-index: 100; padding: 12px 30px; border-radius: 50px; font-weight: bold; width: 80%; text-align: center; }
+        .step-prepaid { background: #007bff; border: 2px solid #fff; }
+        .step-item { background: #ffc107; color: #000; }
+        .main-panel { position: absolute; bottom: 0; width: 100%; background: #fff; color: #222; border-top-radius: 30px; z-index: 10; padding-bottom: env(safe-area-inset-bottom); text-align: center; border-radius: 30px 30px 0 0; }
+        #user-info { font-size: 14px; color: #007bff; margin: 15px 0 5px; font-weight: bold; }
+        #item-price { font-size: 60px; font-weight: 900; color: #f50057; margin: 5px 0; }
+        #buy-btn { width: 90%; padding: 18px; background: #f50057; color: white; border: none; border-radius: 50px; font-size: 24px; font-weight: bold; display: none; margin-bottom: 20px; }
         #pay-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.95); z-index: 100; flex-direction: column; align-items: center; justify-content: center; }
-        .qr-card { background: #fff; padding: 25px; border-radius: 25px; text-align: center; color: #333; width: 80%; }
-        .ok-btn { background: #00e676; border: none; padding: 15px 50px; border-radius: 50px; font-weight: bold; margin-top: 25px; cursor: pointer; }
     </style>
 </head>
 <body>
 
-    <div id="step-indicator" class="step-prepaid">1. 会員QRをスキャン</div>
+    <div id="step-indicator" class="step-prepaid">1. 会員証をスキャン</div>
     <div id="reader"></div>
 
     <div class="main-panel">
-        <div class="content-area">
-            <div id="user-info">💳 会員カードを読み取ってください</div>
-            <div id="item-name">商品を選んでください</div>
-            <div id="item-price">¥ 0</div>
-            <button id="buy-btn" onclick="executePayment()">購入を確定する</button>
-        </div>
+        <div id="user-info">💳 サーバー同期待機中...</div>
+        <div id="item-name" style="font-weight:bold;">商品を選んでください</div>
+        <div id="item-price">¥ 0</div>
+        <button id="buy-btn" onclick="executePayment()">購入を確定（残高減算）</button>
     </div>
 
     <div id="pay-overlay">
-        <div class="qr-card">
-            <b>決済完了！</b>
-            <div id="qrcode" style="margin:20px 0;"></div>
-            <div id="new-balance-text" style="font-size:20px; font-weight:bold; color:#f50057;"></div>
-            <button class="ok-btn" onclick="nextScan()">次へ</button>
+        <div style="background:#fff; padding:30px; border-radius:30px; color:#333; width:80%; text-align:center;">
+            <h2 id="finish-msg">決済完了！</h2>
+            <div id="qrcode" style="margin:20px 0; display:flex; justify-content:center;"></div>
+            <div id="new-balance-text" style="font-size:24px; font-weight:bold; color:#f50057;"></div>
+            <button onclick="location.reload()" style="background:#00e676; border:none; padding:15px 50px; border-radius:50px; font-weight:bold; margin-top:20px;">次へ</button>
         </div>
     </div>
 
     <script>
+        const GAS_URL = "https://script.google.com/macros/s/AKfycbyvNJwfAIlUvqy1B98fMpPsOsAYlY710BMFEX--peJ7ob0dt8MiqbDdiAs444iRkRMmQg/exec";
         const SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQk46CrTJJU-4KMeCxx1DUZCv367fzhXAtdjzWEW0eDT1VdgvGCk4C-NQATkqbjhsZzDoeWQDVdjxHV/pub?gid=0&single=true&output=csv";
+        
         let currentUser = null;
         let selectedItem = null;
-        let isProcessing = false;
 
-        function clean(text) { return text ? text.toString().trim().replace(/[^0-9]/g, "") : ""; }
-
-        async function syncData() {
-            try {
-                const res = await fetch(SHEET_URL + "&cb=" + Date.now());
-                const csvText = await res.text();
-                const rows = csvText.split(/\r?\n/).map(r => r.split(','));
-                // 縦並びデータ対応 (B列の中身)
-                const jan = clean(rows[0][1]);
-                const name = rows[1][1] ? rows[1][1].trim() : "フェットチーネグミ";
-                const price = parseInt(clean(rows[2][1])) || 0;
-                const stock = parseInt(clean(rows[3][1])) || 0;
-                localStorage.setItem('shop_inventory', JSON.stringify({ [jan]: { name, price, stock } }));
-            } catch (e) { console.error("Sync Error"); }
+        async function syncInventory() {
+            const res = await fetch(SHEET_URL + "&cb=" + Date.now());
+            const rows = (await res.text()).split(/\r?\n/).map(r => r.split(','));
+            localStorage.setItem('inv', JSON.stringify({ [rows[0][1].replace(/\D/g,"")]: { name: rows[1][1], price: parseInt(rows[2][1]) } }));
         }
 
-        function executePayment() {
-            if (!currentUser || !selectedItem) return;
-            isProcessing = true;
-            const newBal = currentUser.balance - selectedItem.price;
+        async function executePayment() {
+            const newAmount = -selectedItem.price; // マイナス値を送って減らす
+            document.getElementById('buy-btn').innerText = "通信中...";
             
-            // 新しいQR生成（偽造防止付き）
+            // サーバーの残高を減らす！
+            await fetch(`${GAS_URL}?id=${currentUser.id}&amount=${newAmount}`, { mode: 'no-cors' });
+            
+            const finalBal = currentUser.balance - selectedItem.price;
+            document.getElementById('new-balance-text').innerText = `残高: ¥${finalBal}`;
+            
+            // 新しいQR生成
             const alphabet = "ABCDEFGHIJ";
             const alpha = currentUser.id.split('').map(n => alphabet[parseInt(n)]).join('');
-            const check = Math.round((newBal + parseInt(currentUser.id)) / 2);
-            const newCode = `${currentUser.id}-${newBal}-${alpha}-${check}`;
-
-            document.getElementById('qrcode').innerHTML = "";
-            new QRCode(document.getElementById("qrcode"), { text: newCode, width: 200, height: 200 });
-            document.getElementById('new-balance-text').innerText = `残高: ¥${newBal}`;
+            const check = Math.round((finalBal + parseInt(currentUser.id)) / 2);
+            new QRCode(document.getElementById("qrcode"), { text: `${currentUser.id}-${finalBal}-${alpha}-${check}`, width: 200, height: 200 });
+            
             document.getElementById('pay-overlay').style.display = 'flex';
         }
 
-        function nextScan() { location.reload(); }
-
         window.onload = async () => {
-            await syncData();
+            await syncInventory();
             const scanner = new Html5Qrcode("reader");
-            
-            // どんなQRでも逃さない広角設定
-            const config = { 
-                fps: 30, 
-                qrbox: (w, h) => { return { width: w * 0.8, height: h * 0.8 } }
-            };
-
-            scanner.start({ facingMode: "environment" }, config, (text) => {
-                if (isProcessing) return;
-
-                // 【デバッグ用】読み取った瞬間、何であれアラートを出す
-                // これが出ない場合は「カメラがQRを認識できていない」
-                // これが出るのに進まない場合は「判定ロジックが悪い」
-                alert("読み取り検知: " + text);
-
+            scanner.start({ facingMode: "environment" }, { fps: 30, qrbox: (w,h)=>({width:w*0.8, height:h*0.5}) }, async (text) => {
                 const parts = text.split('-');
-
-                // 1. 会員証スキャン（ハイフンが入っているか、またはcurrentUserがまだいない時）
+                
+                // 1. 会員スキャン
                 if (!currentUser && parts.length >= 2) {
-                    currentUser = { id: parts[0], balance: parseInt(parts[1]) || 0 };
-                    document.getElementById('user-info').innerText = `会員ID:${currentUser.id} | 残高:¥${currentUser.balance}`;
+                    const id = parts[0];
+                    document.getElementById('user-info').innerText = "サーバー照会中...";
+                    
+                    // サーバーから最新残高（810円）を取得！
+                    const res = await fetch(`${GAS_URL}?id=${id}`);
+                    const data = await res.json();
+                    
+                    currentUser = { id: data.id, balance: data.balance };
+                    document.getElementById('user-info').innerText = `会員:${currentUser.id} | サーバー残高:¥${currentUser.balance}`;
                     document.getElementById('step-indicator').innerText = "2. 商品をスキャン";
                     document.getElementById('step-indicator').className = "step-item";
-                    if (navigator.vibrate) navigator.vibrate(100);
                     return;
                 }
 
                 // 2. 商品スキャン
-                const code = clean(text);
-                const inv = JSON.parse(localStorage.getItem('shop_inventory')) || {};
+                const code = text.replace(/\D/g,"");
+                const inv = JSON.parse(localStorage.getItem('inv'));
                 if (inv[code]) {
                     selectedItem = inv[code];
                     document.getElementById('item-name').innerText = selectedItem.name;
                     document.getElementById('item-price').innerText = `¥ ${selectedItem.price}`;
                     document.getElementById('buy-btn').style.display = 'inline-block';
-                    if (navigator.vibrate) navigator.vibrate(50);
                 }
             });
         };
