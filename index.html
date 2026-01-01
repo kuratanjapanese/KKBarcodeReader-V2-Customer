@@ -3,77 +3,56 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>THE POS v11.95 S9-Edition</title>
+    <title>THE POS v12.0 API-Link</title>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <style>
         body { margin: 0; font-family: sans-serif; background: #000; color: #fff; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
         #reader { width: 100%; height: 100%; position: absolute; top: 0; left: 0; z-index: 1; }
-        
-        /* ログアウトボタン */
         #logout-btn { position: absolute; top: 15px; right: 15px; z-index: 110; padding: 10px 15px; background: #ff4444; color: white; border: none; border-radius: 10px; font-weight: bold; display: none; }
+        #step-indicator { position: absolute; top: 15px; left: 15px; z-index: 100; padding: 12px 20px; border-radius: 50px; font-weight: bold; font-size: 13px; background: #007bff; border: 2px solid #fff; }
         
-        #step-indicator { position: absolute; top: 15px; left: 15px; z-index: 100; padding: 12px 20px; border-radius: 50px; font-weight: bold; font-size: 13px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
-        .step-prepaid { background: #007bff; border: 2px solid #fff; }
-        .step-item { background: #ffc107; color: #000; }
-
-        /* 折りたたみパネル（S9の画面比率に合わせて調整） */
-        .main-panel { 
-            position: absolute; bottom: 0; width: 100%; height: 65%;
-            background: #fff; color: #222; z-index: 10; 
-            display: flex; flex-direction: column; 
-            border-radius: 30px 30px 0 0;
-            transition: transform 0.4s cubic-bezier(0.25, 1, 0.5, 1);
-            padding-bottom: env(safe-area-inset-bottom);
-        }
-        /* 閉じている時は、上部のハンドル部分（60px）だけ見えるようにする */
+        .main-panel { position: absolute; bottom: 0; width: 100%; height: 65%; background: #fff; color: #222; z-index: 10; display: flex; flex-direction: column; border-radius: 30px 30px 0 0; transition: transform 0.4s ease; }
         .main-panel.collapsed { transform: translateY(calc(100% - 70px)); }
-
         .drag-handle { width: 100%; height: 60px; display: flex; flex-direction: column; justify-content: center; align-items: center; cursor: pointer; }
-        .handle-bar { width: 45px; height: 6px; background: #ddd; border-radius: 10px; margin-bottom: 5px; }
-        #panel-title { font-size: 14px; font-weight: bold; color: #007bff; }
+        .handle-bar { width: 45px; height: 6px; background: #ddd; border-radius: 10px; }
         
         .content-area { flex: 1; padding: 0 20px 20px; display: flex; flex-direction: column; overflow: hidden; }
-        #cart-container { flex: 1; overflow-y: auto; background: #f8f9fa; border-radius: 15px; padding: 10px; margin-bottom: 10px; border: 1px solid #eee; }
-        .cart-item { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #eee; font-size: 16px; }
+        #user-info { text-align: center; font-weight: bold; color: #007bff; margin-bottom: 10px; }
+        #cart-container { flex: 1; overflow-y: auto; background: #f8f9fa; border-radius: 15px; padding: 10px; margin-bottom: 10px; border: 1px solid #eee; color: #333; }
+        .cart-item { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #eee; }
         
         #total-area { display: flex; justify-content: space-between; align-items: center; padding: 15px; background: #333; color: #fff; border-radius: 15px; }
         #total-price { font-size: 32px; font-weight: 900; color: #ffeb3b; }
-        
         #buy-btn { width: 100%; padding: 18px; background: #f50057; color: white; border: none; border-radius: 50px; font-size: 22px; font-weight: bold; margin-top: 10px; display: none; }
         
         #pay-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.95); z-index: 100; flex-direction: column; align-items: center; justify-content: center; }
     </style>
 </head>
 <body>
-
     <button id="logout-btn" onclick="logout()">ログアウト</button>
-    <div id="step-indicator" class="step-prepaid">1. 会員証をスキャン</div>
+    <div id="step-indicator">1. 会員証スキャン</div>
     <div id="reader"></div>
 
     <div class="main-panel" id="ui-panel">
         <div class="drag-handle" onclick="togglePanel()">
             <div class="handle-bar"></div>
-            <div id="panel-title">タップでカゴを表示</div>
+            <div id="panel-title" style="font-size: 12px; color: #666; margin-top: 5px;">タップで開閉</div>
         </div>
-        
         <div class="content-area">
-            <div id="user-info" style="text-align:center; font-weight:bold; color:#007bff; margin-bottom:10px; font-size:16px;">💳 ログインしてください</div>
+            <div id="user-info">💳 ログイン待機中</div>
             <div id="cart-container"><div id="empty-msg" style="text-align:center; color:#999; margin-top:30px;">カゴは空です</div></div>
-            <div id="total-area">
-                <span style="font-weight:bold;">合計:</span>
-                <span id="total-price">¥ 0</span>
-            </div>
-            <button id="buy-btn" onclick="executePayment()">カゴの中身を決済する</button>
+            <div id="total-area"><span>合計:</span><span id="total-price">¥ 0</span></div>
+            <button id="buy-btn" onclick="executePayment()">決済する</button>
         </div>
     </div>
 
     <div id="pay-overlay">
         <div style="background:#fff; padding:30px; border-radius:30px; color:#333; width:85%; text-align:center;">
-            <h2 id="finish-title">決済完了！</h2>
+            <h2>決済完了！</h2>
             <div id="qrcode" style="margin:20px 0; display:flex; justify-content:center;"></div>
             <div id="new-balance-text" style="font-size:22px; font-weight:bold; color:#f50057;"></div>
-            <button onclick="location.reload()" style="background:#00e676; border:none; padding:15px 40px; border-radius:50px; font-weight:bold; margin-top:20px; color:#000;">次へ進む</button>
+            <button onclick="location.reload()" style="background:#00e676; border:none; padding:15px 40px; border-radius:50px; font-weight:bold; margin-top:20px;">次へ</button>
         </div>
     </div>
 
@@ -85,11 +64,7 @@
         let cart = [];
         let lastScannedCode = "";
 
-        function togglePanel() {
-            const panel = document.getElementById('ui-panel');
-            panel.classList.toggle('collapsed');
-            document.getElementById('panel-title').innerText = panel.classList.contains('collapsed') ? "タップでカゴを表示" : "タップで閉じる";
-        }
+        function togglePanel() { document.getElementById('ui-panel').classList.toggle('collapsed'); }
 
         async function syncInventory() {
             try {
@@ -97,13 +72,7 @@
                 const rows = (await res.text()).split(/\r?\n/).map(r => r.split(','));
                 const jan = rows[0][1].replace(/\D/g,"");
                 localStorage.setItem('inv', JSON.stringify({ [jan]: { name: rows[1][1], price: parseInt(rows[2][1]) } }));
-            } catch(e) { console.error("Sync Error"); }
-        }
-
-        function addToCart(item) {
-            cart.push(item);
-            renderCart();
-            if (navigator.vibrate) navigator.vibrate(50);
+            } catch(e) {}
         }
 
         function renderCart() {
@@ -114,7 +83,7 @@
                 total += item.price;
                 const div = document.createElement('div');
                 div.className = 'cart-item';
-                div.innerHTML = `<span>${i+1}. ${item.name}</span> <b>¥${item.price}</b>`;
+                div.innerHTML = `<span>${i+1}. ${item.name}</span><b>¥${item.price}</b>`;
                 container.appendChild(div);
             });
             document.getElementById('total-price').innerText = `¥ ${total.toLocaleString()}`;
@@ -123,9 +92,8 @@
 
         async function executePayment() {
             const total = cart.reduce((sum, item) => sum + item.price, 0);
-            if (total > currentUser.balance) return alert("残高が足りません！");
+            if (total > currentUser.balance) return alert("残高不足");
             document.getElementById('buy-btn').innerText = "通信中...";
-            
             await fetch(`${GAS_URL}?id=${currentUser.id}&amount=${-total}`, { mode: 'no-cors' });
             
             const finalBal = currentUser.balance - total;
@@ -142,48 +110,43 @@
             const savedUser = sessionStorage.getItem('loggedInUser');
             if (savedUser) {
                 currentUser = JSON.parse(savedUser);
-                document.getElementById('user-info').innerText = `会員:${currentUser.id} | 残高:¥${currentUser.balance}`;
+                document.getElementById('user-info').innerText = `ID:${currentUser.id} | 残高:¥${currentUser.balance}`;
                 document.getElementById('logout-btn').style.display = 'block';
-                document.getElementById('step-indicator').innerText = "2. 商品をスキャン";
-                document.getElementById('step-indicator').className = "step-item";
+                document.getElementById('step-indicator').innerText = "2. 商品スキャン";
+                document.getElementById('step-indicator').style.background = "#ffc107";
+                document.getElementById('step-indicator').style.color = "#000";
             }
 
             const scanner = new Html5Qrcode("reader");
-            // S9の広角カメラに対応するため読み取り設定を最適化
-            const config = { fps: 20, qrbox: (w, h) => { return { width: w * 0.8, height: h * 0.4 } } };
-
-            scanner.start({ facingMode: "environment" }, config, async (text) => {
+            scanner.start({ facingMode: "environment" }, { fps: 20, qrbox: (w,h)=>({width:w*0.8, height:h*0.4}) }, async (text) => {
                 if (text === lastScannedCode) return;
                 lastScannedCode = text;
-                setTimeout(() => { lastScannedCode = ""; }, 2000);
+                setTimeout(() => { lastScannedCode = ""; }, 2500);
 
-                // 1. 会員スキャン（未ログイン時）
                 if (!currentUser) {
-                    // 判定を「ハイフンなし」でもOKにする超ゆるゆるモード
-                    const idCandidate = text.split('-')[0]; 
-                    document.getElementById('user-info').innerText = "サーバー照会中: " + idCandidate;
-                    
-                    try {
-                        const res = await fetch(`${GAS_URL}?id=${idCandidate}`);
-                        const data = await res.json();
-                        if (data && data.id) {
-                            currentUser = { id: data.id, balance: data.balance };
-                            sessionStorage.setItem('loggedInUser', JSON.stringify(currentUser));
-                            location.reload(); 
-                        } else {
-                            document.getElementById('user-info').innerText = "ID未登録: " + idCandidate;
-                        }
-                    } catch (e) {
-                        document.getElementById('user-info').innerText = "サーバー通信エラー";
+                    const idCandidate = text.split('-')[0];
+                    const res = await fetch(`${GAS_URL}?id=${idCandidate}`);
+                    const data = await res.json();
+                    if (data && data.id) {
+                        sessionStorage.setItem('loggedInUser', JSON.stringify({ id: data.id, balance: data.balance }));
+                        location.reload();
                     }
-                    return;
-                }
-
-                // 2. 商品スキャン（ログイン中）
-                if (currentUser) {
+                } else {
                     const code = text.replace(/\D/g,"");
                     const inv = JSON.parse(localStorage.getItem('inv'));
-                    if (inv[code]) addToCart(inv[code]);
+                    if (inv[code]) {
+                        cart.push(inv[code]);
+                        renderCart();
+                    } else {
+                        // 在庫にない場合：Yahoo API経由で検索
+                        document.getElementById('user-info').innerText = "🔍 Yahooで価格を検索中...";
+                        const res = await fetch(`${GAS_URL}?jan=${code}`);
+                        const item = await res.json();
+                        cart.push(item);
+                        renderCart();
+                        document.getElementById('user-info').innerText = `ID:${currentUser.id} | 残高:¥${currentUser.balance}`;
+                    }
+                    if (navigator.vibrate) navigator.vibrate(50);
                 }
             });
         };
